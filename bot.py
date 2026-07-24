@@ -3,6 +3,7 @@ import json
 import feedparser
 import requests
 import re
+import time
 
 # ---------- تنظیمات از Secrets ----------
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -102,6 +103,7 @@ def main():
                     send_to_telegram(message)
                     print(f"پست شد: {title}")
                     new_posted.add(uid)
+                    time.sleep(8)
                 except Exception as e:
                     print(f"خطا در پردازش/ارسال خبر: {e}")
 
