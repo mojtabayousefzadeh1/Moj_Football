@@ -23,9 +23,23 @@ FEED_SLOTS = [
     {"key": "goal", "url": "https://www.goal.com/en/feeds/news?fmt=rss", "count": 1, "label": "🌍 جهان", "needs_translation": True},
 ]
 
+# ---------- کلماتی که یعنی خبر مربوط به فوتبال نیست؛ اگر دیده شدن، خبر رد می‌شود ----------
+EXCLUDE_KEYWORDS = [
+    "فوتسال", "futsal",
+    "والیبال", "volleyball",
+    "بسکتبال", "basketball",
+    "کشتی", "wrestling",
+    "هندبال", "handball",
+    "تنیس", "tennis",
+    "کاراته", "تکواندو", "وزنه‌برداری", "وزنه برداری",
+    "شنا", "دوومیدانی", "بدمینتون", "بولینگ", "بیلیارد",
+    "beach soccer", "فوتبال ساحلی",
+    "زنان", "بانوان", "دختران",  # اخبار لیگ‌های زنان/فوتسال بانوان معمولاً با این کلمات مشخص می‌شن
+]
+
 # ---------- لیست‌های اهمیت‌سنجی ----------
 IRAN_TEAMS = {
-    "تیم ملی": 6, "ملی‌پوشان": 6, "تیم ملی ایران": 6,
+    "تیم ملی فوتبال": 6, "تیم ملی فوتبال ایران": 6,
     "استقلال": 5,
     "پرسپولیس": 4,
     "سپاهان": 3,
@@ -103,9 +117,15 @@ def build_keyword_dict(category):
 
 
 def score_entry(text, category):
+    text_lower = text.lower()
+
+    # اگر خبر مربوط به رشته‌ای غیر از فوتبال بود، رد کن
+    for excl in EXCLUDE_KEYWORDS:
+        if excl.lower() in text_lower:
+            return 0
+
     keywords = build_keyword_dict(category)
     best_score = 0
-    text_lower = text.lower()
     for kw, weight in keywords.items():
         if kw.lower() in text_lower:
             if weight > best_score:
