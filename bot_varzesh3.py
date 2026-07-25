@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import feedparser
 import requests
 
@@ -10,6 +11,7 @@ CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 FEED_URL = "https://www.varzesh3.com/rss/domesticfootball"
 STATE_FILE = "state_varzesh3.json"
 MAX_POSTS = 3
+DELAY_BETWEEN_POSTS = 23 * 60  # 23 دقیقه
 
 EXCLUDE_KEYWORDS = [
     "فوتسال", "والیبال", "بسکتبال", "کشتی", "هندبال", "تنیس",
@@ -81,12 +83,14 @@ def main():
     to_post.reverse()
 
     newest_uid_posted = None
-    for uid, title, summary, link in to_post:
+    for i, (uid, title, summary, link) in enumerate(to_post):
         try:
             message = f"🇮🇷 ورزش سه\n\n<b>{title}</b>\n\n{summary}\n\n📰 منبع: {source_name}\n🔗 {link}"
             send_to_telegram(message)
             print(f"پست شد: {title}")
             newest_uid_posted = uid
+            if i < len(to_post) - 1:
+                time.sleep(DELAY_BETWEEN_POSTS)
         except Exception as e:
             print(f"خطا در ارسال: {e}")
 
