@@ -18,6 +18,12 @@ MAX_POSTS = 2
 DELAY_BETWEEN_POSTS = 30 * 60  # 30 دقیقه
 MAX_AGE_HOURS = 24
 
+EXCLUDE_KEYWORDS = [
+    "golf", "rugby", "cricket", "tennis", "formula 1", "f1 ",
+    "boxing", "darts", "nfl", "cycling", "athletics", "snooker",
+    "netball", "basketball", "olympics", "horse racing", "wrestling",
+]
+
 
 def clean_html(raw_html):
     return re.sub("<.*?>", "", raw_html or "")
@@ -85,9 +91,12 @@ def main():
     for entry in feed.entries:
         ts = get_timestamp(entry)
         if ts > last_posted_ts and ts >= min_ts:
-            uid = entry.get("id", entry.get("link"))
             title = entry.get("title", "")
             summary = clean_html(entry.get("summary", ""))
+            text_lower = (title + " " + summary).lower()
+            if any(kw in text_lower for kw in EXCLUDE_KEYWORDS):
+                continue
+            uid = entry.get("id", entry.get("link"))
             link = entry.get("link", "")
             candidates.append((ts, uid, title, summary, link))
 
