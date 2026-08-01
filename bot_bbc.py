@@ -14,9 +14,7 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.
 
 FEED_URL = "https://feeds.bbci.co.uk/sport/football/rss.xml"
 STATE_FILE = "state_bbc.json"
-MAX_POSTS = 3
-DELAY_BETWEEN_POSTS = 18 * 60
-MAX_AGE_HOURS = 24
+MAX_AGE_HOURS = 8
 CHANNEL_TAG = "@moj_football"
 
 
@@ -36,7 +34,7 @@ def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"last_posted_id": None, "last_posted_ts": 0}
+    return {"last_posted_ts": 0}
 
 
 def save_state(state):
@@ -86,38 +84,31 @@ def main():
     for entry in feed.entries:
         ts = get_timestamp(entry)
         if ts > last_posted_ts and ts >= min_ts:
-            uid = entry.get("id", entry.get("link"))
             title = entry.get("title", "")
             summary = clean_html(entry.get("summary", ""))
             link = entry.get("link", "")
-            candidates.append((ts, uid, title, summary, link))
+            candidates.append((ts, title, summary, link))
 
     if not candidates:
-        print("هیچ خبر جدیدی پیدا نشد.")
+        print("هیچ خبر جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
         return
 
     candidates.sort(key=lambda x: x[0])
-    to_post = candidates[-MAX_POSTS:]
+    ts, title, summary, link = candidates[0]
 
-    newest_ts_posted = last_posted_ts
-    for i, (ts, uid, title, summary, link) in enumerate(to_post):
-        try:
-            rewritten = rewrite_with_gemini(title, summary)
-            message = (
-                f"{rewritten}\n\n"
-                f"{CHANNEL_TAG}\n\n"
-                f"📰 منبع: {source_name}\n🔗 {link}"
-            )
-            send_to_telegram(message)
-            print(f"پست شد: {title}")
-            newest_ts_posted = max(newest_ts_posted, ts)
-            if i < len(to_post) - 1:
-                time.sleep(DELAY_BETWEEN_POSTS)
-        except Exception as e:
-            print(f"خطا در پردازش/ارسال خبر: {e}")
-
-    state["last_posted_ts"] = newest_ts_posted
-    save_state(state)
+    try:
+        rewritten = rewrite_with_gemini(title, summary)
+        message = (
+            f"{rewritten}\n\n"
+            f"{CHANNEL_TAG}\n\n"
+            f"📰 منبع: {source_name}\n🔗 {link}"
+        )
+        send_to_telegram(message)
+        print(f"پست شد: {title}")
+        state["last_posted_ts"] = ts
+        save_state(state)
+    except Exception as e:
+        print(f"خطا در پردازش/ارسال خبر: {e}")
 
 
 if __name__ == "__main__":
