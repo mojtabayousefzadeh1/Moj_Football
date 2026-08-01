@@ -15,8 +15,9 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.
 FEED_URL = "http://feeds.guardian.co.uk/theguardian/football/rss"
 STATE_FILE = "state_guardian.json"
 MAX_POSTS = 2
-DELAY_BETWEEN_POSTS = 35 * 60  # 35 دقیقه
+DELAY_BETWEEN_POSTS = 35 * 60
 MAX_AGE_HOURS = 24
+CHANNEL_TAG = "@moj_football"
 
 EXCLUDE_KEYWORDS = [
     "women's", "womens", "wsl", "nwsl", "female", "ladies",
@@ -111,7 +112,11 @@ def main():
     for i, (ts, uid, title, summary, link) in enumerate(to_post):
         try:
             rewritten = rewrite_with_gemini(title, summary)
-            message = f"🌍 The Guardian\n\n{rewritten}\n\n📰 منبع: {source_name}\n🔗 {link}"
+            message = (
+                f"{rewritten}\n\n"
+                f"{CHANNEL_TAG}\n\n"
+                f"📰 منبع: {source_name}\n🔗 {link}"
+            )
             send_to_telegram(message)
             print(f"پست شد: {title}")
             newest_ts_posted = max(newest_ts_posted, ts)
