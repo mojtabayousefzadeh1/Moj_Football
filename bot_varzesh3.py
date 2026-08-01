@@ -11,7 +11,8 @@ CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 FEED_URL = "https://www.varzesh3.com/rss/domesticfootball"
 STATE_FILE = "state_varzesh3.json"
 MAX_POSTS = 3
-DELAY_BETWEEN_POSTS = 23 * 60  # 23 دقیقه
+DELAY_BETWEEN_POSTS = 23 * 60
+CHANNEL_TAG = "@moj_football"
 
 EXCLUDE_KEYWORDS = [
     "فوتسال", "والیبال", "بسکتبال", "کشتی", "هندبال", "تنیس",
@@ -85,7 +86,11 @@ def main():
     newest_uid_posted = None
     for i, (uid, title, summary, link) in enumerate(to_post):
         try:
-            message = f"🇮🇷 ورزش سه\n\n<b>{title}</b>\n\n{summary}\n\n📰 منبع: {source_name}\n🔗 {link}"
+            message = (
+                f"<b>{title}</b>\n\n{summary}\n\n"
+                f"{CHANNEL_TAG}\n\n"
+                f"📰 منبع: {source_name}\n🔗 {link}"
+            )
             send_to_telegram(message)
             print(f"پست شد: {title}")
             newest_uid_posted = uid
