@@ -2,6 +2,7 @@ import os
 import json
 import re
 import time
+import calendar
 import feedparser
 import requests
 
@@ -10,8 +11,7 @@ CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 
 FEED_URL = "https://www.varzesh3.com/rss/domesticfootball"
 STATE_FILE = "state_varzesh3.json"
-MAX_POSTS = 3
-DELAY_BETWEEN_POSTS = 23 * 60
+MAX_AGE_HOURS = 8
 CHANNEL_TAG = "@moj_football"
 
 EXCLUDE_KEYWORDS = [
@@ -34,11 +34,19 @@ def clean_html(raw_html):
     return re.sub("<.*?>", "", raw_html or "")
 
 
+def get_timestamp(entry):
+    if entry.get("published_parsed"):
+        return calendar.timegm(entry.published_parsed)
+    if entry.get("updated_parsed"):
+        return calendar.timegm(entry.updated_parsed)
+    return 0
+
+
 def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"last_posted_id": None}
+    return {"last_posted_ts": 0}
 
 
 def save_state(state):
@@ -60,48 +68,42 @@ def send_to_telegram(message):
 
 def main():
     state = load_state()
-    last_posted_id = state.get("last_posted_id")
+    last_posted_ts = state.get("last_posted_ts", 0)
+    now_ts = calendar.timegm(time.gmtime())
+    min_ts = now_ts - (MAX_AGE_HOURS * 3600)
 
     feed = feedparser.parse(FEED_URL)
     source_name = feed.feed.get("title", "ورزش سه")
 
-    new_entries = []
+    candidates = []
     for entry in feed.entries:
-        uid = entry.get("id", entry.get("link"))
-        if uid == last_posted_id:
-            break
-        title = entry.get("title", "")
-        summary = clean_html(entry.get("summary", ""))
-        link = entry.get("link", "")
-        if is_football_news(title, summary):
-            new_entries.append((uid, title, summary, link))
+        ts = get_timestamp(entry)
+        if ts > last_posted_ts and ts >= min_ts:
+            title = entry.get("title", "")
+            summary = clean_html(entry.get("summary", ""))
+            if is_football_news(title, summary):
+                link = entry.get("link", "")
+                candidates.append((ts, title, summary, link))
 
-    if not new_entries:
-        print("هیچ خبر فوتبالی جدیدی پیدا نشد.")
+    if not candidates:
+        print("هیچ خبر فوتبالی جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
         return
 
-    to_post = new_entries[:MAX_POSTS]
-    to_post.reverse()
+    candidates.sort(key=lambda x: x[0])
+    ts, title, summary, link = candidates[0]  # قدیمی‌ترینِ خبرهای جدید
 
-    newest_uid_posted = None
-    for i, (uid, title, summary, link) in enumerate(to_post):
-        try:
-            message = (
-                f"<b>{title}</b>\n\n{summary}\n\n"
-                f"{CHANNEL_TAG}\n\n"
-                f"📰 منبع: {source_name}\n🔗 {link}"
-            )
-            send_to_telegram(message)
-            print(f"پست شد: {title}")
-            newest_uid_posted = uid
-            if i < len(to_post) - 1:
-                time.sleep(DELAY_BETWEEN_POSTS)
-        except Exception as e:
-            print(f"خطا در ارسال: {e}")
-
-    if newest_uid_posted:
-        state["last_posted_id"] = new_entries[0][0]
+    try:
+        message = (
+            f"<b>{title}</b>\n\n{summary}\n\n"
+            f"{CHANNEL_TAG}\n\n"
+            f"📰 منبع: {source_name}\n🔗 {link}"
+        )
+        send_to_telegram(message)
+        print(f"پست شد: {title}")
+        state["last_posted_ts"] = ts
         save_state(state)
+    except Exception as e:
+        print(f"خطا در ارسال: {e}")
 
 
 if __name__ == "__main__":
