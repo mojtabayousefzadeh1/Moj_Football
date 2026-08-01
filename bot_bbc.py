@@ -15,8 +15,9 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.
 FEED_URL = "https://feeds.bbci.co.uk/sport/football/rss.xml"
 STATE_FILE = "state_bbc.json"
 MAX_POSTS = 3
-DELAY_BETWEEN_POSTS = 18 * 60  # 18 دقیقه
-MAX_AGE_HOURS = 24  # خبرهای قدیمی‌تر از این، حتی اگه جدید دیده بشن، رد می‌شن
+DELAY_BETWEEN_POSTS = 18 * 60
+MAX_AGE_HOURS = 24
+CHANNEL_TAG = "@moj_football"
 
 
 def clean_html(raw_html):
@@ -24,7 +25,6 @@ def clean_html(raw_html):
 
 
 def get_timestamp(entry):
-    """زمان واقعی انتشار خبر را برمی‌گرداند (ثانیه از epoch)."""
     if entry.get("published_parsed"):
         return calendar.timegm(entry.published_parsed)
     if entry.get("updated_parsed"):
@@ -47,7 +47,9 @@ def save_state(state):
 def rewrite_with_gemini(title, summary):
     prompt = f"""شما یک دستیار خبرنگار ورزشی فارسی‌زبان هستید.
 متن خبر انگلیسی زیر را به فارسی روان خلاصه و بازنویسی کن (نه ترجمه کلمه‌به‌کلمه، بلکه بازنویسی کامل با کلمات خودت، حداکثر ۴ خط).
-در پایان چیزی درباره منبع ننویس، فقط خلاصه خبر را بده.
+
+مهم: خروجی تو باید فقط و فقط همون خلاصه فارسی باشه. هیچ توضیح اضافه‌ای درباره
+زبان متن، مراحل کارت، یا هر چیز دیگه‌ای ننویس. مستقیم با خلاصه خبر شروع کن.
 
 عنوان: {title}
 متن: {summary}
@@ -83,7 +85,6 @@ def main():
     candidates = []
     for entry in feed.entries:
         ts = get_timestamp(entry)
-        # فقط خبرهایی که هم جدیدتر از آخرین پست قبلی هستن و هم قدیمی‌تر از سقف مجاز نیستن
         if ts > last_posted_ts and ts >= min_ts:
             uid = entry.get("id", entry.get("link"))
             title = entry.get("title", "")
@@ -95,15 +96,18 @@ def main():
         print("هیچ خبر جدیدی پیدا نشد.")
         return
 
-    # مرتب‌سازی بر اساس زمان واقعی انتشار (قدیم به جدید) برای پست کردن به ترتیب درست
     candidates.sort(key=lambda x: x[0])
-    to_post = candidates[-MAX_POSTS:]  # جدیدترین‌ها را نگه می‌داریم (اگر بیشتر از MAX_POSTS بود)
+    to_post = candidates[-MAX_POSTS:]
 
     newest_ts_posted = last_posted_ts
     for i, (ts, uid, title, summary, link) in enumerate(to_post):
         try:
             rewritten = rewrite_with_gemini(title, summary)
-            message = f"🌍 BBC Sport\n\n{rewritten}\n\n📰 منبع: {source_name}\n🔗 {link}"
+            message = (
+                f"{rewritten}\n\n"
+                f"{CHANNEL_TAG}\n\n"
+                f"📰 منبع: {source_name}\n🔗 {link}"
+            )
             send_to_telegram(message)
             print(f"پست شد: {title}")
             newest_ts_posted = max(newest_ts_posted, ts)
