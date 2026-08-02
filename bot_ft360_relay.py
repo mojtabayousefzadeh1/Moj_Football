@@ -14,7 +14,6 @@ DELAY_BETWEEN_POSTS = 2 * 60
 SOURCE_TAG = "@Ft360_ir"
 CHANNEL_TAG = "@moj_football"
 
-# برای حذف اشاره‌ی خودشون از انتهای متن (با یا بدون @ و با حروف بزرگ/کوچک مختلف)
 TRAILING_MENTION_RE = re.compile(r"(\s*@?Ft360_ir\s*)+$", re.IGNORECASE)
 
 
@@ -68,28 +67,12 @@ def fetch_posts():
             )
             text = clean_trailing_mention(text)
 
-        # تلاش برای پیدا کردن عکس (چند الگوی مختلف امتحان می‌شود)
-        photo_url = None
-        photo_patterns = [
-            r'tgme_widget_message_photo_wrap"[^>]*style="[^"]*background-image:url\(\'([^\']+)\'\)',
-            r"class=\"tgme_widget_message_photo_wrap[^\"]*\"[^>]*background-image:url\('([^']+)'\)",
-        ]
-        for pattern in photo_patterns:
-            m = re.search(pattern, block)
-            if m:
-                photo_url = m.group(1)
-                break
+        has_media = bool(
+            re.search(r"tgme_widget_message_photo_wrap", block)
+            or re.search(r"tgme_widget_message_video", block)
+        )
 
-        # اگر عکس نبود، شاید ویدیو باشد؛ تامبنیل ویدیو را به‌جای عکس می‌گیریم
-        if not photo_url:
-            video_match = re.search(
-                r'tgme_widget_message_video_thumb"[^>]*style="[^"]*background-image:url\(\'([^\']+)\'\)',
-                block,
-            )
-            if video_match:
-                photo_url = video_match.group(1)
-
-        posts.append({"id": post_id, "text": text, "photo": photo_url})
+        posts.append({"id": post_id, "text": text, "has_media": has_media})
 
     posts.sort(key=lambda p: p["id"])
     return posts
@@ -98,13 +81,6 @@ def fetch_posts():
 def send_text(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHANNEL_ID, "text": text, "parse_mode": "HTML"}
-    r = requests.post(url, json=payload, timeout=30)
-    r.raise_for_status()
-
-
-def send_photo(photo_url, caption):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    payload = {"chat_id": CHANNEL_ID, "photo": photo_url, "caption": caption[:1024], "parse_mode": "HTML"}
     r = requests.post(url, json=payload, timeout=30)
     r.raise_for_status()
 
@@ -132,22 +108,18 @@ def main():
 
     newest_id = last_post_id
     for i, post in enumerate(new_posts):
-        if not post["text"] and not post["photo"]:
+        if not post["text"]:
             newest_id = max(newest_id, post["id"])
             continue
         try:
+            media_note = "\n\n🎞 مشاهده عکس/ویدیو در کانال منبع" if post["has_media"] else ""
             full_text = (
-                f"{post['text']}\n\n"
+                f"{post['text']}{media_note}\n\n"
                 f"{CHANNEL_TAG}\n\n"
                 f"📰 منبع: {SOURCE_TAG}"
             )
-
-            if post["photo"]:
-                send_photo(post["photo"], full_text)
-            else:
-                send_text(full_text)
-
-            print(f"پست شد: {post['id']} | عکس: {'بله' if post['photo'] else 'خیر'}")
+            send_text(full_text)
+            print(f"پست شد: {post['id']}")
             newest_id = max(newest_id, post["id"])
             if i < len(new_posts) - 1:
                 time.sleep(DELAY_BETWEEN_POSTS)
