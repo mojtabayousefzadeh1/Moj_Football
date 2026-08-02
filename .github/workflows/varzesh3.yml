@@ -2,9 +2,11 @@ name: Varzesh3 News Bot
 
 on:
   workflow_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -35,4 +37,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add state_varzesh3.json
           git diff --staged --quiet || git commit -m "update varzesh3 state"
+          git pull --rebase origin main
           git push
