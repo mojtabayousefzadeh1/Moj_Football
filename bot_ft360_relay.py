@@ -67,12 +67,10 @@ def fetch_posts():
             )
             text = clean_trailing_mention(text)
 
-        has_media = bool(
-            re.search(r"tgme_widget_message_photo_wrap", block)
-            or re.search(r"tgme_widget_message_video", block)
-        )
+        has_photo = bool(re.search(r"tgme_widget_message_photo_wrap", block))
+        has_video = bool(re.search(r"tgme_widget_message_video", block))
 
-        posts.append({"id": post_id, "text": text, "has_media": has_media})
+        posts.append({"id": post_id, "text": text, "has_photo": has_photo, "has_video": has_video})
 
     posts.sort(key=lambda p: p["id"])
     return posts
@@ -112,7 +110,12 @@ def main():
             newest_id = max(newest_id, post["id"])
             continue
         try:
-            media_note = "\n\n🎞 مشاهده عکس/ویدیو در کانال منبع" if post["has_media"] else ""
+            if post["has_video"]:
+                media_note = "\n\n🎞 مشاهده ویدیو در کانال منبع"
+            elif post["has_photo"]:
+                media_note = "\n\n🖼 مشاهده عکس در کانال منبع"
+            else:
+                media_note = ""
             full_text = (
                 f"{post['text']}{media_note}\n\n"
                 f"{CHANNEL_TAG}\n\n"
