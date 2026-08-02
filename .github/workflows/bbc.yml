@@ -1,8 +1,6 @@
 name: BBC Sport News Bot
 
 on:
-  schedule:
-    - cron: "*/18 * * * *"
   workflow_dispatch:
 
 permissions:
