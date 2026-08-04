@@ -19,15 +19,32 @@ EXCLUDE_KEYWORDS = [
     "کاراته", "تکواندو", "وزنه‌برداری", "وزنه برداری",
     "شنا", "دوومیدانی", "بدمینتون", "بولینگ", "بیلیارد",
     "زنان", "بانوان", "دختران",
+    "جنگ", "موشک", "حمله", "تحریم", "پهپاد", "نظامی",
+    "اسرائیل", "آمریکا", "ترامپ", "دیپلماسی", "سیاسی",
+]
+
+# اگر هیچ‌کدوم از این کلمات توی خبر نبود، یعنی به‌احتمال زیاد فوتبالی نیست و رد می‌شه
+INCLUDE_KEYWORDS = [
+    "فوتبال", "لیگ برتر", "جام حذفی", "تیم ملی", "دیدار", "بازیکن",
+    "مربی", "سرمربی", "دروازه‌بان", "گل زد", "پنالتی", "داور",
+    "استقلال", "پرسپولیس", "سپاهان", "تراکتور", "فولاد", "ذوب‌آهن",
+    "ملوان", "گل‌گهر", "مس رفسنجان", "نساجی", "آلومینیوم", "پیکان",
+    "خیبر", "چادرملو", "فجر سپاسی",
 ]
 
 
 def is_football_news(title, summary):
     text = (title + " " + summary).lower()
+
     for kw in EXCLUDE_KEYWORDS:
         if kw.lower() in text:
             return False
-    return True
+
+    for kw in INCLUDE_KEYWORDS:
+        if kw.lower() in text:
+            return True
+
+    return False  # هیچ نشونه‌ی روشنی از فوتبال نبود
 
 
 def clean_html(raw_html):
@@ -90,7 +107,7 @@ def main():
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary, link = candidates[0]  # قدیمی‌ترینِ خبرهای جدید
+    ts, title, summary, link = candidates[0]
 
     try:
         message = (
