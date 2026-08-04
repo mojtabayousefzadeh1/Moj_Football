@@ -23,7 +23,6 @@ EXCLUDE_KEYWORDS = [
     "اسرائیل", "آمریکا", "ترامپ", "دیپلماسی", "سیاسی",
 ]
 
-# اگر هیچ‌کدوم از این کلمات توی خبر نبود، یعنی به‌احتمال زیاد فوتبالی نیست و رد می‌شه
 INCLUDE_KEYWORDS = [
     "فوتبال", "لیگ برتر", "جام حذفی", "تیم ملی", "دیدار", "بازیکن",
     "مربی", "سرمربی", "دروازه‌بان", "گل زد", "پنالتی", "داور",
@@ -44,7 +43,7 @@ def is_football_news(title, summary):
         if kw.lower() in text:
             return True
 
-    return False  # هیچ نشونه‌ی روشنی از فوتبال نبود
+    return False
 
 
 def clean_html(raw_html):
@@ -90,7 +89,6 @@ def main():
     min_ts = now_ts - (MAX_AGE_HOURS * 3600)
 
     feed = feedparser.parse(FEED_URL)
-    source_name = feed.feed.get("title", "ورزش سه")
 
     candidates = []
     for entry in feed.entries:
@@ -99,22 +97,17 @@ def main():
             title = entry.get("title", "")
             summary = clean_html(entry.get("summary", ""))
             if is_football_news(title, summary):
-                link = entry.get("link", "")
-                candidates.append((ts, title, summary, link))
+                candidates.append((ts, title, summary))
 
     if not candidates:
         print("هیچ خبر فوتبالی جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary, link = candidates[0]
+    ts, title, summary = candidates[0]
 
     try:
-        message = (
-            f"<b>{title}</b>\n\n{summary}\n\n"
-            f"{CHANNEL_TAG}\n\n"
-            f"📰 منبع: {source_name}\n🔗 {link}"
-        )
+        message = f"<b>{title}</b>\n\n{summary}\n\n{CHANNEL_TAG}"
         send_to_telegram(message)
         print(f"پست شد: {title}")
         state["last_posted_ts"] = ts
