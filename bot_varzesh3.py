@@ -58,6 +58,35 @@ def get_timestamp(entry):
     return 0
 
 
+def extract_image(entry):
+    # روش ۱: تگ media:content
+    if hasattr(entry, "media_content") and entry.media_content:
+        url = entry.media_content[0].get("url")
+        if url:
+            return url
+
+    # روش ۲: تگ media:thumbnail
+    if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
+        url = entry.media_thumbnail[0].get("url")
+        if url:
+            return url
+
+    # روش ۳: enclosure (فایل ضمیمه)
+    if hasattr(entry, "enclosures") and entry.enclosures:
+        for enc in entry.enclosures:
+            enc_type = enc.get("type", "")
+            if "image" in enc_type:
+                return enc.get("href") or enc.get("url")
+
+    # روش ۴: جستجوی مستقیم توی خود متن HTML خلاصه (fallback)
+    raw_summary = entry.get("summary", "")
+    img_match = re.search(r'<img[^>]+src="([^"]+)"', raw_summary)
+    if img_match:
+        return img_match.group(1)
+
+    return None
+
+
 def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
@@ -70,13 +99,25 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False)
 
 
-def send_to_telegram(message):
+def send_text(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHANNEL_ID,
         "text": message,
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
+    }
+    r = requests.post(url, json=payload, timeout=30)
+    r.raise_for_status()
+
+
+def send_photo(photo_url, caption):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    payload = {
+        "chat_id": CHANNEL_ID,
+        "photo": photo_url,
+        "caption": caption[:1024],
+        "parse_mode": "HTML",
     }
     r = requests.post(url, json=payload, timeout=30)
     r.raise_for_status()
@@ -97,19 +138,28 @@ def main():
             title = entry.get("title", "")
             summary = clean_html(entry.get("summary", ""))
             if is_football_news(title, summary):
-                candidates.append((ts, title, summary))
+                image_url = extract_image(entry)
+                candidates.append((ts, title, summary, image_url))
 
     if not candidates:
         print("هیچ خبر فوتبالی جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary = candidates[0]
+    ts, title, summary, image_url = candidates[0]
 
     try:
         message = f"<b>{title}</b>\n\n{summary}\n\n{CHANNEL_TAG}"
-        send_to_telegram(message)
-        print(f"پست شد: {title}")
+        if image_url:
+            try:
+                send_photo(image_url, message)
+            except Exception as e:
+                print(f"ارسال عکس ناموفق بود، فقط متن ارسال می‌شود: {e}")
+                send_text(message)
+        else:
+            send_text(message)
+
+        print(f"پست شد: {title} | عکس: {'بله' if image_url else 'خیر'}")
         state["last_posted_ts"] = ts
         save_state(state)
     except Exception as e:
