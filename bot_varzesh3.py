@@ -34,16 +34,17 @@ INCLUDE_KEYWORDS = [
 
 def is_football_news(title, summary):
     text = (title + " " + summary).lower()
-
     for kw in EXCLUDE_KEYWORDS:
         if kw.lower() in text:
             return False
-
     for kw in INCLUDE_KEYWORDS:
         if kw.lower() in text:
             return True
-
     return False
+
+
+def is_video_content(link):
+    return "video.varzesh3.com" in link or "/video/" in link
 
 
 def clean_html(raw_html):
@@ -59,31 +60,22 @@ def get_timestamp(entry):
 
 
 def extract_image(entry):
-    # روش ۱: تگ media:content
     if hasattr(entry, "media_content") and entry.media_content:
         url = entry.media_content[0].get("url")
         if url:
             return url
-
-    # روش ۲: تگ media:thumbnail
     if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
         url = entry.media_thumbnail[0].get("url")
         if url:
             return url
-
-    # روش ۳: enclosure (فایل ضمیمه)
     if hasattr(entry, "enclosures") and entry.enclosures:
         for enc in entry.enclosures:
-            enc_type = enc.get("type", "")
-            if "image" in enc_type:
+            if "image" in enc.get("type", ""):
                 return enc.get("href") or enc.get("url")
-
-    # روش ۴: جستجوی مستقیم توی خود متن HTML خلاصه (fallback)
     raw_summary = entry.get("summary", "")
     img_match = re.search(r'<img[^>]+src="([^"]+)"', raw_summary)
     if img_match:
         return img_match.group(1)
-
     return None
 
 
@@ -135,6 +127,9 @@ def main():
     for entry in feed.entries:
         ts = get_timestamp(entry)
         if ts > last_posted_ts and ts >= min_ts:
+            link = entry.get("link", "")
+            if is_video_content(link):
+                continue
             title = entry.get("title", "")
             summary = clean_html(entry.get("summary", ""))
             if is_football_news(title, summary):
