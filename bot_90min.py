@@ -83,6 +83,9 @@ def main():
     now_ts = calendar.timegm(time.gmtime())
     min_ts = now_ts - (MAX_AGE_HOURS * 3600)
 
+    if not os.path.exists(STATE_FILE):
+        save_state(state)
+
     feed = feedparser.parse(FEED_URL)
     source_name = feed.feed.get("title", "90min")
 
