@@ -94,7 +94,7 @@ def main():
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary, link = candidates[0]
+    ts, title, summary = candidates[-1]
 
     try:
         rewritten = rewrite_with_gemini(title, summary)
