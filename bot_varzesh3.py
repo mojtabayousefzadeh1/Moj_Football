@@ -141,7 +141,7 @@ def main():
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary, image_url = candidates[0]
+    ts, title, summary, image_url = candidates[-1]
 
     try:
         message = f"<b>{title}</b>\n\n{summary}\n\n{CHANNEL_TAG}"
