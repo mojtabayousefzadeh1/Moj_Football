@@ -6,6 +6,7 @@ import calendar
 import html
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
@@ -64,18 +65,36 @@ def get_excerpt(entry):
     return clean_html(entry.get("summary", ""))
 
 
-def get_full_text(entry):
+def fetch_full_text(link):
     """
-    متن کامل خبر. اکثر فیدهای خبری فارسی این را در تگ
-    <content:encoded> می‌گذارند که feedparser آن را در entry.content
-    قرار می‌دهد. اگر این فیلد وجود نداشت، به‌جای آن از خلاصه استفاده
-    می‌شود تا حداقل چیزی برای نمایش وجود داشته باشد.
+    RSS ورزش۳ فقط خلاصه می‌دهد، نه متن کامل خبر.
+    این تابع خود صفحه‌ی خبر را باز کرده و متن کامل را از داخل
+    <div class="news-body"> استخراج می‌کند.
+    در صورت هر گونه خطا (تغییر ساختار سایت، قطعی شبکه و ...) None
+    برمی‌گرداند تا فراخواننده به خلاصه بازگردد.
     """
-    if hasattr(entry, "content") and entry.content:
-        value = entry.content[0].get("value", "")
-        if value.strip():
-            return clean_html(value)
-    return clean_html(entry.get("summary", ""))
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0 Safari/537.36"
+            )
+        }
+        r = requests.get(link, headers=headers, timeout=20)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        body_div = soup.find("div", class_="news-body")
+        if body_div:
+            # حذف تبلیغات و اسکریپت‌های تو در توی داخل بدنه‌ی خبر
+            for junk in body_div.find_all(["script", "style"]):
+                junk.decompose()
+            text = body_div.get_text(separator="\n", strip=True)
+            if text:
+                return text
+    except Exception as e:
+        print(f"خطا در دریافت متن کامل خبر ({link}): {e}")
+    return None
 
 
 def replace_source(summary):
@@ -189,18 +208,6 @@ def main():
 
     feed = feedparser.parse(FEED_URL)
 
-    # --- DEBUG: این بلاک فقط برای تست ساختار فیده، بعد از تست حذفش کن ---
-    if feed.entries:
-        first = feed.entries[0]
-        print("=== DEBUG: entry keys ===")
-        print(list(first.keys()))
-        print("=== DEBUG: summary (len=%d) ===" % len(first.get("summary", "")))
-        print(first.get("summary", "")[:500])
-        print("=== DEBUG: content ===")
-        print(first.get("content", "ندارد"))
-        print("=== DEBUG END ===")
-    # --- پایان بلاک دیباگ ---
-
     candidates = []
     for entry in feed.entries:
         ts = get_timestamp(entry)
@@ -210,10 +217,14 @@ def main():
                 continue
             title = entry.get("title", "")
             excerpt = get_excerpt(entry)
-            full_text = get_full_text(entry)
-            if is_football_news(title, excerpt + " " + full_text):
-                image_url = extract_image(entry)
-                candidates.append((ts, title, excerpt, full_text, image_url))
+            if not is_football_news(title, excerpt):
+                continue
+            full_text = fetch_full_text(link)
+            if not full_text:
+                # اگر اسکرپینگ صفحه شکست خورد، حداقل از خلاصه استفاده کن
+                full_text = excerpt
+            image_url = extract_image(entry)
+            candidates.append((ts, title, excerpt, full_text, image_url))
 
     if not candidates:
         print("هیچ خبر فوتبالی جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
