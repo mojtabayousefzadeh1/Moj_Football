@@ -3,6 +3,7 @@ import json
 import re
 import time
 import calendar
+import html
 import feedparser
 import requests
 
@@ -31,6 +32,13 @@ INCLUDE_KEYWORDS = [
     "خیبر", "چادرملو", "فجر سپاسی",
 ]
 
+# عبارت منبع خبر که وبسایت ورزش۳ در ابتدای متن‌ها می‌نویسد
+# نمونه‌ها: به گزارش "ورزش سه"،  /  به گزارش "ورزش سه".  /  به گزارش «ورزش سه»،
+SOURCE_PATTERN = re.compile(
+    r'به\s*گزارش\s*["\u00ab\u2018\u201c]?\s*ورزش\s*(?:سه|3)\s*["\u00bb\u2019\u201d]?\s*[،.]?'
+)
+NEW_SOURCE_PHRASE = "به گزارش موج فوتبال،"
+
 
 def is_football_news(title, summary):
     text = (title + " " + summary).lower()
@@ -49,6 +57,11 @@ def is_video_content(link):
 
 def clean_html(raw_html):
     return re.sub("<.*?>", "", raw_html or "")
+
+
+def replace_source(summary):
+    """جایگزینی 'به گزارش "ورزش سه"،' با 'به گزارش موج فوتبال،'"""
+    return SOURCE_PATTERN.sub(NEW_SOURCE_PHRASE, summary)
 
 
 def get_timestamp(entry):
@@ -91,6 +104,36 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False)
 
 
+def build_message(title, summary):
+    """
+    پیام نهایی را با تیتر بولد و متن خبر به‌صورت نقل‌قول تاشو (expandable)
+    می‌سازد و منبع خبر را به 'موج فوتبال' تغییر می‌دهد.
+    """
+    fixed_summary = replace_source(summary)
+    safe_title = html.escape(title)
+    safe_summary = html.escape(fixed_summary)
+
+    return (
+        f"<b>{safe_title}</b>\n\n"
+        f"<blockquote expandable>{safe_summary}</blockquote>\n\n"
+        f"{CHANNEL_TAG}"
+    )
+
+
+def trim_caption(message, limit=1024):
+    """
+    کپشن عکس تلگرام حداکثر ۱۰۲۴ کاراکتر است. اگر پیام طولانی‌تر باشد،
+    آن را طوری کوتاه می‌کنیم که تگ blockquote سالم بسته بماند.
+    """
+    if len(message) <= limit:
+        return message
+
+    closing_tag = "</blockquote>"
+    tail = f"...{closing_tag}\n\n{CHANNEL_TAG}"
+    cut_length = limit - len(tail)
+    return message[:cut_length] + tail
+
+
 def send_text(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -108,7 +151,7 @@ def send_photo(photo_url, caption):
     payload = {
         "chat_id": CHANNEL_ID,
         "photo": photo_url,
-        "caption": caption[:1024],
+        "caption": trim_caption(caption),
         "parse_mode": "HTML",
     }
     r = requests.post(url, json=payload, timeout=30)
@@ -144,7 +187,7 @@ def main():
     ts, title, summary, image_url = candidates[-1]
 
     try:
-        message = f"<b>{title}</b>\n\n{summary}\n\n{CHANNEL_TAG}"
+        message = build_message(title, summary)
         if image_url:
             try:
                 send_photo(image_url, message)
