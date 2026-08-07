@@ -89,7 +89,21 @@ def fetch_full_text(link):
             # حذف تبلیغات و اسکریپت‌های تو در توی داخل بدنه‌ی خبر
             for junk in body_div.find_all(["script", "style"]):
                 junk.decompose()
-            text = body_div.get_text(separator="\n", strip=True)
+
+            # فقط پایان پاراگراف‌ها و <br> باید خط جدید ایجاد کنند؛
+            # اگر از separator در get_text استفاده شود، بین هر تگ
+            # (حتی لینک‌های داخل متن مثل اسم بازیکن‌ها) خط جدید
+            # اضافه می‌شود که باعث بهم‌ریختگی متن می‌شود.
+            for p in body_div.find_all("p"):
+                p.append("\n\n")
+            for br in body_div.find_all("br"):
+                br.replace_with("\n")
+
+            text = body_div.get_text(separator="")
+            text = re.sub(r"[ \t]+", " ", text)
+            text = re.sub(r"\n[ \t]+", "\n", text)
+            text = re.sub(r"\n{3,}", "\n\n", text)
+            text = text.strip()
             if text:
                 return text
     except Exception as e:
