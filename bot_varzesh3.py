@@ -59,6 +59,25 @@ def clean_html(raw_html):
     return re.sub("<.*?>", "", raw_html or "")
 
 
+def get_excerpt(entry):
+    """خلاصه کوتاه خبر (تگ description/summary در RSS)."""
+    return clean_html(entry.get("summary", ""))
+
+
+def get_full_text(entry):
+    """
+    متن کامل خبر. اکثر فیدهای خبری فارسی این را در تگ
+    <content:encoded> می‌گذارند که feedparser آن را در entry.content
+    قرار می‌دهد. اگر این فیلد وجود نداشت، به‌جای آن از خلاصه استفاده
+    می‌شود تا حداقل چیزی برای نمایش وجود داشته باشد.
+    """
+    if hasattr(entry, "content") and entry.content:
+        value = entry.content[0].get("value", "")
+        if value.strip():
+            return clean_html(value)
+    return clean_html(entry.get("summary", ""))
+
+
 def replace_source(summary):
     """جایگزینی 'به گزارش "ورزش سه"،' با 'به گزارش موج فوتبال،'"""
     return SOURCE_PATTERN.sub(NEW_SOURCE_PHRASE, summary)
@@ -104,20 +123,24 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False)
 
 
-def build_message(title, summary):
+def build_message(title, excerpt, full_text):
     """
-    پیام نهایی را با تیتر بولد و متن خبر به‌صورت نقل‌قول تاشو (expandable)
-    می‌سازد و منبع خبر را به 'موج فوتبال' تغییر می‌دهد.
+    پیام نهایی: تیتر بولد + خلاصه به‌صورت متن عادی + متن کامل خبر
+    به‌صورت نقل‌قول تاشو (expandable). منبع خبر داخل متن کامل
+    از 'ورزش سه' به 'موج فوتبال' تغییر می‌کند.
     """
-    fixed_summary = replace_source(summary)
+    fixed_full_text = replace_source(full_text)
     safe_title = html.escape(title)
-    safe_summary = html.escape(fixed_summary)
+    safe_excerpt = html.escape(excerpt)
+    safe_full_text = html.escape(fixed_full_text)
 
-    return (
-        f"<b>{safe_title}</b>\n\n"
-        f"<blockquote expandable>{safe_summary}</blockquote>\n\n"
-        f"{CHANNEL_TAG}"
-    )
+    parts = [f"<b>{safe_title}</b>"]
+    if safe_excerpt:
+        parts.append(safe_excerpt)
+    parts.append(f"<blockquote expandable>{safe_full_text}</blockquote>")
+    parts.append(CHANNEL_TAG)
+
+    return "\n\n".join(parts)
 
 
 def trim_caption(message, limit=1024):
@@ -166,6 +189,18 @@ def main():
 
     feed = feedparser.parse(FEED_URL)
 
+    # --- DEBUG: این بلاک فقط برای تست ساختار فیده، بعد از تست حذفش کن ---
+    if feed.entries:
+        first = feed.entries[0]
+        print("=== DEBUG: entry keys ===")
+        print(list(first.keys()))
+        print("=== DEBUG: summary (len=%d) ===" % len(first.get("summary", "")))
+        print(first.get("summary", "")[:500])
+        print("=== DEBUG: content ===")
+        print(first.get("content", "ندارد"))
+        print("=== DEBUG END ===")
+    # --- پایان بلاک دیباگ ---
+
     candidates = []
     for entry in feed.entries:
         ts = get_timestamp(entry)
@@ -174,20 +209,21 @@ def main():
             if is_video_content(link):
                 continue
             title = entry.get("title", "")
-            summary = clean_html(entry.get("summary", ""))
-            if is_football_news(title, summary):
+            excerpt = get_excerpt(entry)
+            full_text = get_full_text(entry)
+            if is_football_news(title, excerpt + " " + full_text):
                 image_url = extract_image(entry)
-                candidates.append((ts, title, summary, image_url))
+                candidates.append((ts, title, excerpt, full_text, image_url))
 
     if not candidates:
         print("هیچ خبر فوتبالی جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary, image_url = candidates[-1]
+    ts, title, excerpt, full_text, image_url = candidates[-1]
 
     try:
-        message = build_message(title, summary)
+        message = build_message(title, excerpt, full_text)
         if image_url:
             try:
                 send_photo(image_url, message)
