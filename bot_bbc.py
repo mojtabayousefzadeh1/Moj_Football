@@ -157,7 +157,9 @@ def build_message(fa_title, fa_excerpt, fa_body, source_name, link):
     if safe_excerpt:
         parts.append(safe_excerpt)
     parts.append(f"<blockquote expandable>{safe_body}</blockquote>")
-    parts.append(f"{CHANNEL_TAG}\n\n📰 منبع: {source_name}\n🔗 {link}")
+    parts.append(CHANNEL_TAG)
+    # توجه: source_name و link عمداً به متن پیام اضافه نمی‌شوند
+    # (طبق درخواست، در کانال تلگرام نمایش داده نشوند)
 
     return "\n\n".join(parts)
 
@@ -198,6 +200,22 @@ def main():
 
     feed = feedparser.parse(FEED_URL)
     source_name = feed.feed.get("title", "BBC Sport")
+
+    # --- DEBUG: بعد از پیدا کردن علت مشکل، این بلاک رو حذف کن ---
+    print(f"=== DEBUG: تعداد کل آیتم‌های فید: {len(feed.entries)}")
+    print(f"=== DEBUG: last_posted_ts ذخیره‌شده: {last_posted_ts}")
+    print(f"=== DEBUG: now_ts: {now_ts} | min_ts (۸ ساعت قبل): {min_ts}")
+    if feed.bozo:
+        print(f"=== DEBUG: خطای پارس فید (bozo): {feed.bozo_exception}")
+    for e in feed.entries[:5]:
+        ts = get_timestamp(e)
+        print(
+            f"=== DEBUG entry: ts={ts} | "
+            f"newer_than_last={ts > last_posted_ts} | "
+            f"within_8h={ts >= min_ts} | title={e.get('title', '')[:60]}"
+        )
+    print("=== DEBUG END ===")
+    # --- پایان بلاک دیباگ ---
 
     candidates = []
     for entry in feed.entries:
