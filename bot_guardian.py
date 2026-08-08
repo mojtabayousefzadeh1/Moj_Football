@@ -3,19 +3,25 @@ import json
 import re
 import time
 import calendar
+import html
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
+GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
+)
 
 FEED_URL = "http://feeds.guardian.co.uk/theguardian/football/rss"
 STATE_FILE = "state_guardian.json"
 MAX_AGE_HOURS = 8
 CHANNEL_TAG = "@moj_football"
+SOURCE_PREFIX = "به گزارش موج فوتبال، "
 
 EXCLUDE_KEYWORDS = [
     "women's", "womens", "wsl", "nwsl", "female", "ladies",
@@ -47,29 +53,144 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False)
 
 
-def rewrite_with_gemini(title, summary):
-    prompt = f"""شما یک دستیار خبرنگار ورزشی فارسی‌زبان هستید.
-متن خبر زیر را (به هر زبانی که هست) به فارسی روان خلاصه و بازنویسی کن
-(نه ترجمه کلمه‌به‌کلمه، بلکه بازنویسی کامل با کلمات خودت، حداکثر ۴ خط).
+def fetch_guardian_article_text(link):
+    """
+    RSS گاردین فقط یک خلاصه‌ی کوتاه می‌دهد. این تابع خود صفحه‌ی خبر
+    را باز کرده و متن کامل انگلیسی مقاله را استخراج می‌کند.
 
-مهم: خروجی تو باید فقط و فقط همون خلاصه فارسی باشه. هیچ توضیح اضافه‌ای درباره
-زبان متن، مراحل کارت، یا هر چیز دیگه‌ای ننویس. مستقیم با خلاصه خبر شروع کن.
+    سایت گاردین معمولاً بدنه‌ی اصلی خبر را داخل
+    <div data-gu-name="body"> قرار می‌دهد. اگر این ساختار پیدا نشد
+    (به‌خاطر تغییر طراحی سایت)، به fallback های ساده‌تر سوییچ می‌کند.
+    """
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0 Safari/537.36"
+            )
+        }
+        r = requests.get(link, headers=headers, timeout=20)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        paragraphs = []
+
+        # حالت اول: بدنه‌ی اصلی استاندارد گاردین
+        body_div = soup.find("div", attrs={"data-gu-name": "body"})
+        if body_div:
+            for p in body_div.find_all("p"):
+                text = p.get_text(separator="", strip=True)
+                if text:
+                    paragraphs.append(text)
+
+        # حالت دوم (fallback): <div id="maincontent">
+        if not paragraphs:
+            main_div = soup.find("div", id="maincontent")
+            if main_div:
+                for p in main_div.find_all("p"):
+                    text = p.get_text(separator="", strip=True)
+                    if text:
+                        paragraphs.append(text)
+
+        # حالت سوم (fallback نهایی): تمام <p> داخل <article>
+        if not paragraphs:
+            article = soup.find("article")
+            if article:
+                for p in article.find_all("p"):
+                    text = p.get_text(separator="", strip=True)
+                    if text:
+                        paragraphs.append(text)
+
+        if paragraphs:
+            return "\n\n".join(paragraphs)
+    except Exception as e:
+        print(f"خطا در دریافت متن کامل خبر گاردین ({link}): {e}")
+    return None
+
+
+def translate_with_gemini(title, excerpt, full_text):
+    """
+    عنوان، خلاصه و متن کامل انگلیسی را یکجا به جمنای می‌دهد و
+    ترجمه‌ی فارسی هر سه بخش را با جداکننده‌های مشخص پس می‌گیرد.
+    """
+    prompt = f"""شما یک مترجم و خبرنگار ورزشی حرفه‌ای فارسی‌زبان هستید.
+
+متن خبر زیر (از گاردین ورزشی) را به فارسی روان و طبیعی برگردان.
+خروجی را دقیقاً با همین سه جداکننده و به همین ترتیب بنویس. هیچ توضیح،
+مقدمه یا متن اضافه‌ای غیر از این سه بخش ننویس:
+
+===TITLE===
+(ترجمه‌ی روان تیتر خبر به فارسی، فقط یک خط)
+===EXCERPT===
+(خلاصه‌ی بسیار کوتاه خبر در یک تا دو جمله‌ی فارسی)
+===BODY===
+(ترجمه‌ی کامل و روان کل متن خبر به فارسی؛ بازنویسی خبرنگاری با کلمات
+خودت نه ترجمه کلمه‌به‌کلمه، اما بدون حذف اطلاعات مهم؛ پاراگراف‌بندی
+اصلی را با یک خط خالی بین پاراگراف‌ها حفظ کن)
 
 عنوان: {title}
-متن: {summary}
+خلاصه: {excerpt}
+متن کامل:
+{full_text}
 """
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    resp = requests.post(GEMINI_URL, json=payload, timeout=30)
+    resp = requests.post(GEMINI_URL, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    title_match = re.search(r"===TITLE===\s*(.*?)\s*===EXCERPT===", raw_text, re.S)
+    excerpt_match = re.search(r"===EXCERPT===\s*(.*?)\s*===BODY===", raw_text, re.S)
+    body_match = re.search(r"===BODY===\s*(.*)", raw_text, re.S)
+
+    if not (title_match and excerpt_match and body_match):
+        raise ValueError(f"خروجی جمنای قابل پارس نبود:\n{raw_text[:500]}")
+
+    return {
+        "title": title_match.group(1).strip(),
+        "excerpt": excerpt_match.group(1).strip(),
+        "body": body_match.group(1).strip(),
+    }
+
+
+def build_message(fa_title, fa_excerpt, fa_body, source_name, link):
+    safe_title = html.escape(fa_title)
+    safe_excerpt = html.escape(fa_excerpt)
+    safe_body = html.escape(SOURCE_PREFIX + fa_body)
+
+    parts = [f"<b>{safe_title}</b>"]
+    if safe_excerpt:
+        parts.append(safe_excerpt)
+    parts.append(f"<blockquote expandable>{safe_body}</blockquote>")
+    parts.append(CHANNEL_TAG)
+    # توجه: source_name و link عمداً به متن پیام اضافه نمی‌شوند
+    # (طبق درخواست، در کانال تلگرام نمایش داده نشوند)
+
+    return "\n\n".join(parts)
+
+
+def trim_message(message, limit=4096):
+    """
+    محدودیت طول پیام متنی تلگرام ۴۰۹۶ کاراکتر است. اگر رد شد،
+    طوری کوتاه می‌کنیم که تگ blockquote سالم بسته بماند.
+    """
+    if len(message) <= limit:
+        return message
+    closing_tag = "</blockquote>"
+    tail_idx = message.rfind(closing_tag)
+    if tail_idx == -1:
+        return message[:limit]
+    after = message[tail_idx + len(closing_tag):]
+    budget = limit - len(after) - len(closing_tag) - 3
+    return message[:budget] + "..." + closing_tag + after
 
 
 def send_to_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHANNEL_ID,
-        "text": message,
+        "text": trim_message(message),
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
@@ -91,27 +212,32 @@ def main():
         ts = get_timestamp(entry)
         if ts > last_posted_ts and ts >= min_ts:
             title = entry.get("title", "")
-            summary = clean_html(entry.get("summary", ""))
-            text_lower = (title + " " + summary).lower()
+            excerpt = clean_html(entry.get("summary", ""))
+            text_lower = (title + " " + excerpt).lower()
             if any(kw in text_lower for kw in EXCLUDE_KEYWORDS):
                 continue
             link = entry.get("link", "")
-            candidates.append((ts, title, summary, link))
+            candidates.append((ts, title, excerpt, link))
 
     if not candidates:
         print("هیچ خبر جدیدی (در بازه ۸ ساعت اخیر) پیدا نشد.")
         return
 
     candidates.sort(key=lambda x: x[0])
-    ts, title, summary, link = candidates[-1]
+    ts, title, excerpt, link = candidates[-1]
 
     try:
-        rewritten = rewrite_with_gemini(title, summary)
-        message = (
-            f"{rewritten}\n\n"
-            f"{CHANNEL_TAG}\n\n"
-            f"📰 منبع: {source_name}\n🔗 {link}"
-        )
+        full_text = fetch_guardian_article_text(link)
+        if not full_text:
+            # اگر اسکرپینگ صفحه شکست خورد، حداقل از خلاصه استفاده کن
+            full_text = excerpt
+
+        translated = translate_with_gemini(title, excerpt, full_text)
+        fa_title = translated["title"].strip()
+        fa_excerpt = translated["excerpt"].strip()
+        fa_body = translated["body"].strip()
+
+        message = build_message(fa_title, fa_excerpt, fa_body, source_name, link)
         send_to_telegram(message)
         print(f"پست شد: {title}")
         state["last_posted_ts"] = ts
