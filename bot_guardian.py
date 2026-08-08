@@ -74,33 +74,41 @@ def fetch_guardian_article_text(link):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
+        def extract_paragraphs(container):
+            """
+            متن هر پاراگراف را با فاصله‌ی صحیح بین لینک‌های داخل متن
+            (اسم بازیکن‌ها، تیم‌ها و غیره) استخراج می‌کند. اگر از
+            separator خالی استفاده شود، کلمات کنار لینک‌ها به هم
+            می‌چسبند (مثل varzesh3_bot.py هم همین مشکل بود).
+            """
+            result = []
+            for p in container.find_all("p"):
+                text = p.get_text(separator=" ", strip=True)
+                text = re.sub(r"\s+", " ", text)
+                text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+                text = text.strip()
+                if text:
+                    result.append(text)
+            return result
+
         paragraphs = []
 
         # حالت اول: بدنه‌ی اصلی استاندارد گاردین
         body_div = soup.find("div", attrs={"data-gu-name": "body"})
         if body_div:
-            for p in body_div.find_all("p"):
-                text = p.get_text(separator="", strip=True)
-                if text:
-                    paragraphs.append(text)
+            paragraphs = extract_paragraphs(body_div)
 
         # حالت دوم (fallback): <div id="maincontent">
         if not paragraphs:
             main_div = soup.find("div", id="maincontent")
             if main_div:
-                for p in main_div.find_all("p"):
-                    text = p.get_text(separator="", strip=True)
-                    if text:
-                        paragraphs.append(text)
+                paragraphs = extract_paragraphs(main_div)
 
         # حالت سوم (fallback نهایی): تمام <p> داخل <article>
         if not paragraphs:
             article = soup.find("article")
             if article:
-                for p in article.find_all("p"):
-                    text = p.get_text(separator="", strip=True)
-                    if text:
-                        paragraphs.append(text)
+                paragraphs = extract_paragraphs(article)
 
         if paragraphs:
             return "\n\n".join(paragraphs)
