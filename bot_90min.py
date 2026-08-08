@@ -88,7 +88,9 @@ def main():
 
     feed = feedparser.parse(FEED_URL)
     source_name = feed.feed.get("title", "90min")
-
+    print(f"تعداد کل خبرهای فید: {len(feed.entries)}")
+    if feed.entries:
+        print(f"نمونه published خبر اول: {feed.entries[0].get('published', 'ندارد')}")
     candidates = []
     for entry in feed.entries:
         ts = get_timestamp(entry)
