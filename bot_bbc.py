@@ -198,8 +198,11 @@ def main():
     now_ts = calendar.timegm(time.gmtime())
     min_ts = now_ts - (MAX_AGE_HOURS * 3600)
 
-    feed = feedparser.parse(FEED_URL)
-    source_name = feed.feed.get("title", "BBC Sport")
+    if feed.entries:
+        first = feed.entries[0]
+        print(f"=== DEBUG: کلیدهای موجود در خبر اول: {list(first.keys())}")
+        print(f"=== DEBUG: media_thumbnail: {first.get('media_thumbnail', 'وجود ندارد')}")
+        print(f"=== DEBUG: media_content: {first.get('media_content', 'وجود ندارد')}")
 
     # --- DEBUG: بعد از پیدا کردن علت مشکل، این بلاک رو حذف کن ---
     print(f"=== DEBUG: تعداد کل آیتم‌های فید: {len(feed.entries)}")
