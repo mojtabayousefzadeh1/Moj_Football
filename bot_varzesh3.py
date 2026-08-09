@@ -254,9 +254,11 @@ def main():
                 send_photo(image_url, message)
             except Exception as e:
                 print(f"ارسال عکس ناموفق بود، فقط متن ارسال می‌شود: {e}")
-                send_text(message)
+                hidden_link = f'<a href="{link}">&#8203;</a>'
+                send_text(message + hidden_link)
         else:
-            send_text(message)
+            hidden_link = f'<a href="{link}">&#8203;</a>'
+            send_text(message + hidden_link)
 
         print(f"پست شد: {title} | عکس: {'بله' if image_url else 'خیر'}")
         state["last_posted_ts"] = ts
